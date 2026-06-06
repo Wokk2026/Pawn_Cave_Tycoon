@@ -1,8 +1,7 @@
 using { /Fortnite.com/Devices }
 using { /Verse.org/Simulation }
 
-# Elérhetővé tesszük a saját projekt névterünket, hogy a fordító lássa a loot_definition-t
-using { /localhost/Pawn_Cave_Tycoon } 
+
 
 # Egyedi azonosító a nyersanyagok típusainak elkülönítésére
 raw_material_type := enum{ IronOre, CopperOre, GoldOre, RefinedMetal }
@@ -22,7 +21,7 @@ crafting_recipe := struct<concrete>:
 craft_station_validator := class(creative_device):
 
     # JAVÍTÁS: A 'tuple' kulcsszó törölve a visszatérési típusból, csak a zárójel () maradt!
-    ValidateAndCraft(CurrentInventory: []loot_definition, Recipe: crafting_recipe, CurrentWeightCapacity: float, CurrentBackpackWeight: float):?([]loot_definition, loot_definition) =
+    ValidateAndCraft(CurrentInventory: []loot_definition, Recipe: crafting_recipe, CurrentWeightCapacity: float, CurrentBackpackWeight: float):?tuple([]loot_definition, loot_definition) =
         
         # Ide gyűjtjük azokat az indexeket, amiket a sikeres crafting során ki kell hagyni a táskából
         var IndicesToRemove : []int = array{}
@@ -32,8 +31,12 @@ craft_station_validator := class(creative_device):
             var FoundCount : int = 0
             var TrackedIndices : []int = array{}
 
-            for (Index -> Item : CurrentInventory):
-                if (CheckItemType(Item, Ingredient.MaterialType)?):
+           for (Index -> Item : CurrentInventory):
+                # 1. Kiszámoljuk az eredményt előre, biztonságos környezetben
+                var IsMatch : logic = CheckItemType(Item, Ingredient.MaterialType)
+                
+                # 2. Itt már csak a letárolt logikai értéket kérdezzük le a '?' jellel
+                if (IsMatch?):
                     set FoundCount = FoundCount + 1
                     set TrackedIndices = TrackedIndices + array{Index}
 
@@ -70,23 +73,24 @@ craft_station_validator := class(creative_device):
                 set NewInventory = NewInventory + array{Item}
 
         # A jutalom legyártása
-        CraftedItem := loot_definition:
-            ItemName := "Finomított Fém"
-            Weight := Recipe.ResultWeight
-            SellPrice := Recipe.ResultBasePrice
-            ItemAsset := false
-            ItemProp := false
-            PickupButton := button_device{}[cite: 1]
+        CraftedItem := loot_definition{
+            ItemName := "Finomított Fém",
+            Weight := Recipe.ResultWeight,
+            SellPrice := Recipe.ResultBasePrice,
+            ItemAsset := false,
+            ItemProp := false,
+            PickupButton := button_device{}
+        }
 
         # Szigorú Verse tuple visszatérési érték (kulcsszó nélkül)
         return option{(NewInventory + array{CraftedItem}, CraftedItem)}
 
     # Segédfüggvény a tárgytípusok név alapján történő ellenőrzésére
-    CheckItemType(Item: loot_definition, TargetType: raw_material_type):?logic =
+    CheckItemType(Item: loot_definition, TargetType: raw_material_type):logic =
         if (TargetType = raw_material_type.IronOre and Item.ItemName = "Vasérc"):
-            return option{true}
+            return true
         if (TargetType = raw_material_type.CopperOre and Item.ItemName = "Rézérc"):
-            return option{true}
+            return true
         if (TargetType = raw_material_type.GoldOre and Item.ItemName = "Aranyérc"):
-            return option{true}
+            return true
         return false

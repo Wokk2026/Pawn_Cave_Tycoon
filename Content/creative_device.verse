@@ -6,8 +6,7 @@ using { /Verse.org/Simulation }
 PawnCave_WeightManager := class(creative_device):
 
     # Az UEFN-ben ide húzod be a 4 darab Class Selectort, szigorúan sorrendben (Könnyű -> Túlterhelt)
-    @editable
-    ClassSelectors : []class_selector_device = array{}
+    @editable ClassSelectors : []class_and_team_selector_device = array{}
 
     # TÖBBJÁTÉKOS VÉDELEM: Ez a map (szótár) tárolja el játékosokra lebontva, hogy ki melyik szinten van
     var PlayerWeightTiers : [player]int = map{}
@@ -37,7 +36,7 @@ PawnCave_WeightManager := class(creative_device):
                 set CurrentTier = SavedTier
 
             # 3. LÉPÉS: Csak akkor terheljük a szervert osztályváltással, ha TÉNYLEG szintet lépett
-            if (TargetTier /= CurrentTier):
+            if (TargetTier <> CurrentTier):
                 # Frissítjük a játékos rekordját a Map-ben
                 if (set PlayerWeightTiers[Player] = TargetTier):
                     # Végrehajtjuk a tényleges váltást

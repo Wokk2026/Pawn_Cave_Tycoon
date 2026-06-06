@@ -22,7 +22,7 @@ MakeNPCGreetingText<localizes>() : message = "[ PULT ]\nKattints az alkudozás i
 MakeNPCOfferText<localizes>(ItemName: string, Offer: int) : message = "NPC Vevő: Látom kint van a {ItemName}.\nAdok érte {Offer} $-t!\nMit lépsz?"
 MakeNPCNoItemsText<localizes>() : message = "NPC Vevő: Nincs semmi a bolti polcokon, ami érdekelne."
 
-loot_definition := class<concrete>:
+loot_definition := class<concrete><public>:
     @editable ItemName : string = "Ismeretlen Tárgy"
     @editable ItemAsset : ?creative_prop_asset = false
     @editable ItemProp : ?creative_prop = false
@@ -99,7 +99,7 @@ pawn_shop_manager_device := class(creative_device):
     @editable NPCBillboard : billboard_device = billboard_device{}
 
     # --- ÚJ: Class Selectorok és Multiplayertűrő Map a súlyrendszerhez ---
-    @editable ClassSelectors : []class_selector_device = array{}
+    @editable ClassSelectors : []class_and_team_selector_device = array{}
     var PlayerWeightTiers : [player]int = map{}
 
     @editable ExtractionZone : mutator_zone_device = mutator_zone_device{}
@@ -372,7 +372,7 @@ pawn_shop_manager_device := class(creative_device):
                 set CurrentTier = SavedTier
 
             # 3. LÉPÉS: Osztályváltás kikényszerítése, ha szintet lépett
-            if (TargetTier /=  CurrentTier):
+            if (TargetTier <> CurrentTier):
                 if (set PlayerWeightTiers[Player] = TargetTier):
                     ExecuteClassChange(Player, TargetTier)
                     Logger.Print("Súlybüntetés frissítve. Játékos új szintje: {TargetTier}")
