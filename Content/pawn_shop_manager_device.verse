@@ -17,7 +17,6 @@ MakeDropText<localizes>(Name: string, Weight: float) : message = "ELDOBÁS: {Nam
 MakeEmptyShelfText<localizes>() : message = "[ ÜRES POLC ]\nKattints a kipakoláshoz"
 MakeShopItemText<localizes>(Name: string, MinPrice: int, MaxPrice: int) : message = "{Name}\nBecsült érték:\n{MinPrice} $ - {MaxPrice} $\n(Vevőre vár)"
 MakeMuseumItemText<localizes>(Name: string, Income: int) : message = "MÚZEUM: {Name}\nKiállítva\nBevétel: +{Income} $/tick"
-
 MakeNPCGreetingText<localizes>() : message = "[ PULT ]\nKattints az alkudozás indításához."
 MakeNPCOfferText<localizes>(ItemName: string, Offer: int) : message = "NPC Vevő: Látom kint van a {ItemName}.\nAdok érte {Offer} $-t!\nMit lépsz?"
 MakeNPCNoItemsText<localizes>() : message = "NPC Vevő: Nincs semmi a bolti polcokon, ami érdekelne."
@@ -34,7 +33,6 @@ loot_definition := class<concrete><public>:
     @editable ItemAsset : ?creative_prop_asset = false
     @editable ItemProp : ?creative_prop = false
     @editable PickupButton : button_device = button_device{}
-    
     @editable Weight : float = 5.0
     @editable SellPrice : int = 50
     @editable TickIncome : int = 5
@@ -52,7 +50,6 @@ shelf_slot := class:
     var IsEmpty : logic = true
     var PlacedLoot : ?loot_definition = false
     var PlacedProp : ?creative_prop = false
-    var InventoryUIBox : stack_box = stack_box{Orientation := orientation.Vertical}
 
     Init():void=
         ShelfMarker.Hide()
@@ -106,14 +103,13 @@ pawn_shop_manager_device := class(creative_device):
     @editable NPCRejectButton : button_device = button_device{}
     @editable NPCBillboard : billboard_device = billboard_device{}
 
-    # --- ÚJ: Class Selectorok és Multiplayertűrő Map a súlyrendszerhez ---
     @editable ClassSelectors : []class_and_team_selector_device = array{}
     var PlayerWeightTiers : [player]int = map{}
 
     @editable ExtractionZone : mutator_zone_device = mutator_zone_device{}
     @editable ShopTeleporter : teleporter_device = teleporter_device{}
-    # --- ÚJ: A pultnál álló NPC vizuális eszköze és a Rebirth szint ---
     @editable ShopNPC : character_device = character_device{}
+  
     var CurrentRebirthLevel : int = 0
     var UsedLootDefinitions : []loot_definition = array{}
     var ShopShelves : []shelf_slot = array{}
@@ -128,11 +124,15 @@ pawn_shop_manager_device := class(creative_device):
     var ActiveNPCOffer : int = 0
 
     var BackpackInventory : []loot_definition = array{}
+    # ÚJ: Ez tárolja, hogy mit fedeztünk már fel a játék során
+    var DiscoveredItems : [string]logic = map{}
     var StashInventory : []loot_definition = array{}
 
     var MoneyUI : text_block = text_block{DefaultTextColor := NamedColors.White}
     var WeightUI : text_block = text_block{DefaultTextColor := NamedColors.White}
     var StashUI : text_block = text_block{DefaultTextColor := NamedColors.Yellow}
+    var InventoryUIBox : stack_box = stack_box{Orientation := orientation.Vertical}
+    var CurrentCanvas : ?canvas = false
 
     OnBegin<override>()<suspends>: void=
         set CurrentPlayerMoney = StartingMoney
@@ -162,7 +162,7 @@ pawn_shop_manager_device := class(creative_device):
         CashRegisterButton.InteractedWithEvent.Subscribe(OnCashRegisterPressed)
         UpgradeBackpackButton.InteractedWithEvent.Subscribe(OnUpgradeBackpackPressed)
         PaywallButton.InteractedWithEvent.Subscribe(OnPaywallPressed)
-        
+     
         NPCBillboard.SetText(MakeNPCGreetingText())
         NPCAcceptButton.Disable()
         NPCRejectButton.Disable()
@@ -187,34 +187,10 @@ pawn_shop_manager_device := class(creative_device):
                 set FullShelves = FullShelves + array{Slot}
 
         if (FullShelves.Length > 0):
-            # Kiválasztunk egy véletlenszerű tárgyat a polcokról
             RandomShelfIndex := GetRandomInt(0, FullShelves.Length - 1)
-            
             if (TargetShelf := FullShelves[RandomShelfIndex], Loot := TargetShelf.PlacedLoot?):
-                
-                # 1. Kiszámoljuk az okos ajánlatot a Rebirth szintünkkel
                 FinalOffer := CalculateNPCOffer(Loot.SellPrice, CurrentRebirthLevel)
-                
-                # 2. Lejátsszuk a vizuális animációt a pultnál lévő NPC-n
                 PlayNPCDecisionAnimation(Loot.SellPrice, FinalOffer)
-                
-                # 3. Frissítjük a UI-t és a belső változókat
-                set ActiveNegotiationShelf = option{TargetShelf}
-                set ActiveNPCOffer = FinalOffer
-                
-                NPCBillboard.SetText(MakeNPCOfferText(Loot.ItemName, FinalOffer))
-                NPCNextCustomerButton.Disable()
-                NPCAcceptButton.Enable()
-                NPCRejectButton.Enable()
-        else:
-            NPCBillboard.SetText(MakeNPCNoItemsText())
-
-        if (FullShelves.Length > 0):
-            RandomShelfIndex := GetRandomInt(0, FullShelves.Length - 1)
-            if (TargetShelf := FullShelves[RandomShelfIndex], Loot := TargetShelf.PlacedLoot?):
-                MinOffer := Loot.SellPrice - GetRandomInt(5, 20)
-                MaxOffer := Loot.SellPrice + GetRandomInt(30, 150)
-                FinalOffer := GetRandomInt(MinOffer, MaxOffer)
                 
                 set ActiveNegotiationShelf = option{TargetShelf}
                 set ActiveNPCOffer = FinalOffer
@@ -280,13 +256,12 @@ pawn_shop_manager_device := class(creative_device):
         if (StashInventory.Length > 0):
             LastIndex := StashInventory.Length - 1
             if (ItemToPlace := StashInventory[LastIndex]):
-                
                 MarkerTransform := Slot.ShelfMarker.GetTransform()
                 CorrectedTransform := transform:
                     Translation := MarkerTransform.Translation
                     Rotation := MarkerTransform.Rotation
                     Scale := vector3{X := 1.0, Y := 1.0, Z := 1.0}
-                
+               
                 if (ActualAsset := ItemToPlace.ItemAsset?):
                     SpawnResult := SpawnProp(ActualAsset, CorrectedTransform)
                     
@@ -311,16 +286,32 @@ pawn_shop_manager_device := class(creative_device):
 
     OnFixedLootPickedUp(Agent : agent, Loot : loot_definition): void=
         if ((CurrentBackpackWeight + Loot.Weight) <= MaxWeightCapacity):
+            var IsFirstTime : logic = false
+            if (not DiscoveredItems[Loot.ItemName]):
+                set IsFirstTime = true
             set BackpackInventory = BackpackInventory + array{Loot}
             set CurrentBackpackWeight = CurrentBackpackWeight + Loot.Weight
             if (ActualProp := Loot.ItemProp?):
                 ActualProp.Hide()
             Loot.PickupButton.Disable()
+            if (IsFirstTime?):
+                # Életében először vette fel!
+                if (set DiscoveredItems[Loot.ItemName] = true):
+                    Logger.Print("ÚJ FELFEDEZÉS: {Loot.ItemName}! Ez a Múzeumba megy, nem adhatod el.")
+                    # Itt adhatunk bónusz pénzt a felfedezésért
+                    set CurrentPlayerMoney = CurrentPlayerMoney + 1000
             set UsedLootDefinitions = UsedLootDefinitions + array{Loot}
             UpdateUI() 
             CheckWeightPenalty(Agent)
+            if (IsFirstTime?):
+                # Életében először vette fel!
+                if (set DiscoveredItems[Loot.ItemName] = true):
+                    Logger.Print("ÚJ FELFEDEZÉS: {Loot.ItemName}! Ez a Múzeumba megy, nem adhatod el.")
+                    # Itt adhatunk bónusz pénzt a felfedezésért
+                    set CurrentPlayerMoney = CurrentPlayerMoney + 1000
         else:
             Logger.Print("Tele a taska!")
+            
 
     OnPlayerExtracted(Agent : agent): void=
         if (BackpackInventory.Length > 0):
@@ -356,32 +347,34 @@ pawn_shop_manager_device := class(creative_device):
         else:
             Logger.Print("Nincs eleg penzed az ajto kinyitasara!")
 
-    # --- A RÉGI FÜGGVÉNY BEKÖTÉSE AZ ÚJ RENDSZERBE ---
     CheckWeightPenalty(Agent : agent): void=
         if (Player := player[Agent]):
             ApplyWeightPenalty(Player, CurrentBackpackWeight)
 
     UpdateUI(): void=
-        MoneyUI.SetText(MakeMoneyText(CurrentPlayerMoney))
-        WeightUI.SetText(MakeWeightText(CurrentBackpackWeight, MaxWeightCapacity))
-        StashUI.SetText(MakeStashText(StashInventory.Length, CurrentTickIncome))
-
-        # ÚJ: Dinamikus gombok generálása a hátizsák tartalmából
-        var UIWidgets : []stack_box_slot = array{}
-        for (Index -> Item : BackpackInventory):
-            DropButton := button_loud{DefaultText := MakeDropText(Item.ItemName, Item.Weight)}
-            Handler := drop_item_handler{Manager := Self, ItemIndex := Index}
-            DropButton.OnClick().Subscribe(Handler.OnClick)
+        Playspace := GetPlayspace()
+        for (Player : Playspace.GetPlayers(), PlayerUI := GetPlayerUI[Player]):
+            # Letöröljük a régi UI-t, ha volt
+            if (OldCanvas := CurrentCanvas?):
+                PlayerUI.RemoveWidget(OldCanvas)
             
-            set UIWidgets = UIWidgets + array:
-                stack_box_slot{Widget := DropButton, Padding := margin{Top := 5.0, Bottom := 5.0}}
-                
-        InventoryUIBox.SetSlots(UIWidgets)
+            MoneyUI.SetText(MakeMoneyText(CurrentPlayerMoney))
+            WeightUI.SetText(MakeWeightText(CurrentBackpackWeight, MaxWeightCapacity))
+            StashUI.SetText(MakeStashText(StashInventory.Length, CurrentTickIncome))
 
-    CreatePlayerUI(Player : player): void=
-        if (PlayerUI := GetPlayerUI[Player]):
-            UpdateUI()
-            MyCanvas : canvas = canvas:
+            # Legyártjuk az új gombokat
+            var UIWidgets : []stack_box_slot = array{}
+            for (Index -> Item : BackpackInventory):
+                DropButton := button_loud{DefaultText := MakeDropText(Item.ItemName, Item.Weight)}
+                Handler := drop_item_handler{Manager := Self, ItemIndex := Index}
+                DropButton.OnClick().Subscribe(Handler.OnClick)
+                set UIWidgets = UIWidgets + array:
+                    stack_box_slot{Widget := DropButton, Padding := margin{Top := 5.0, Bottom := 5.0}}
+            
+            NewInventoryUIBox := stack_box{Orientation := orientation.Vertical, Slots := UIWidgets}
+
+            # Felépítjük a friss vásznat
+            NewCanvas := canvas:
                 Slots := array:
                     canvas_slot:
                         Anchors := anchors{Minimum := vector2{X := 0.05, Y := 0.20}, Maximum := vector2{X := 0.05, Y := 0.20}}
@@ -392,36 +385,35 @@ pawn_shop_manager_device := class(creative_device):
                     canvas_slot:
                         Anchors := anchors{Minimum := vector2{X := 0.05, Y := 0.30}, Maximum := vector2{X := 0.05, Y := 0.30}}
                         Widget := StashUI
-                    # ÚJ: Itt adjuk hozzá a képernyőhöz az eldobható tárgyak listáját (Középtájt, jobb oldalon)
                     canvas_slot:
                         Anchors := anchors{Minimum := vector2{X := 0.80, Y := 0.30}, Maximum := vector2{X := 0.80, Y := 0.30}}
                         Alignment := vector2{X := 0.0, Y := 0.0}
-                        Widget := InventoryUIBox
-            PlayerUI.AddWidget(MyCanvas)
+                        Widget := NewInventoryUIBox
+            
+            set CurrentCanvas = option{NewCanvas}
+            PlayerUI.AddWidget(NewCanvas)
 
-    # --- SÚLYBÜNTETÉS MECHANIKA (v41.00) ---
+    CreatePlayerUI(Player : player): void=
+        UpdateUI()
+
     ApplyWeightPenalty(Player : player, TotalWeight : float) : void =
         if (FortChar := Player.GetFortCharacter[]):
-            
-            # 1. LÉPÉS: Proporcionális (százalékos) szintkalkuláció a MaxWeightCapacity alapján!
             var WeightRatio : float = TotalWeight / MaxWeightCapacity
             var TargetTier : int = 0
             
             if (WeightRatio >= 0.25 and WeightRatio < 0.50):
-                set TargetTier = 1 # 25-50% telítettség
+                set TargetTier = 1 
             else if (WeightRatio >= 0.50 and WeightRatio < 0.75):
-                set TargetTier = 2 # 50-75% telítettség
+                set TargetTier = 2 
             else if (WeightRatio >= 0.75):
-                set TargetTier = 3 # 75% felett
+                set TargetTier = 3 
             else:
-                set TargetTier = 0 # 25% alatt, Könnyű
+                set TargetTier = 0 
 
-            # 2. LÉPÉS: Lekérdezzük a játékos JELENLEGI szintjét a Map-ből
             var CurrentTier : int = 0
             if (SavedTier := PlayerWeightTiers[Player]):
                 set CurrentTier = SavedTier
 
-            # 3. LÉPÉS: Osztályváltás kikényszerítése, ha szintet lépett
             if (TargetTier <> CurrentTier):
                 if (set PlayerWeightTiers[Player] = TargetTier):
                     ExecuteClassChange(Player, TargetTier)
@@ -431,18 +423,16 @@ pawn_shop_manager_device := class(creative_device):
         if (TierIndex >= 0 and TierIndex < ClassSelectors.Length):
             if (TargetSelector := ClassSelectors[TierIndex]):
                 TargetSelector.ChangeClass(Player)
-                # Kiszámolja a végleges ajánlatot a Rebirth szint alapján
 
     CalculateNPCOffer(BasePrice: int, RebirthLevel: int): int =
         var MinMultiplier : float = 0.8
         var MaxMultiplier : float = 1.5 + (RebirthLevel * 0.5)
-        
         var RandomFactor : float = GetRandomFloat(MinMultiplier, MaxMultiplier)
         var FinalOfferFloat : float = (BasePrice * 1.0) * RandomFactor
-        
         var FinalOffer : int = Floor[FinalOfferFloat] or BasePrice
         return FinalOffer
-        DropItemFromInventory(IndexToRemove : int, Player : player) : void=
+        
+    DropItemFromInventory(IndexToRemove : int, Player : player) : void=
         var NewInventory : []loot_definition = array{}
         var DroppedWeight : float = 0.0
 
@@ -456,23 +446,18 @@ pawn_shop_manager_device := class(creative_device):
         set BackpackInventory = NewInventory
         set CurrentBackpackWeight = CurrentBackpackWeight - DroppedWeight
         
-        # Biztonsági nullázás a lebegőpontos matek hibái ellen
         if (CurrentBackpackWeight < 0.1):
             set CurrentBackpackWeight = 0.0
             
         UpdateUI()
         ApplyWeightPenalty(Player, CurrentBackpackWeight)
 
-    # Meghatározza a vizuális reakciót az arányszám alapján
     PlayNPCDecisionAnimation(BasePrice: int, FinalOffer: int): void =
         var OfferRatio: float = (FinalOffer * 1.0) / (BasePrice * 1.0)
         
         if (OfferRatio < 0.9):
             Logger.Print("NPC Vizuális Reakció: Flegma legyintés. Pocsék ajánlat.")
-            # Később ide kötjük be a Scene Graph / Cinematic hívást a flegma animációhoz
         else if (OfferRatio >= 0.9 and OfferRatio <= 1.5):
             Logger.Print("NPC Vizuális Reakció: Gondolkodó bólogatás. Megfontolt ajánlat.")
-            # Később ide kötjük be a normál animációt
         else:
             Logger.Print("NPC Vizuális Reakció: Izgatott gesztikuláció. Jackpot ajánlat!")
-            # Később ide kötjük be az izgatott animációt
