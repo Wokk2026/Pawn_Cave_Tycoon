@@ -17,7 +17,7 @@ PawnCave_WeightManager := class(creative_device):
         Print("PawnCave_WeightManager elindult. A 4-lépcsős Class-alapú súlyrendszer aktív.")
 
     # Ezt a publikus függvényt hívhatod meg a Tappable HUD-ból vagy az Inventory logikából, amikor egy tárgyat felvesznek/leraknak
-    public ApplyWeightPenalty(Player : player, TotalWeight : float) : void =
+    ApplyWeightPenalty(Player : player, TotalWeight : float) : void =
         if (FortChar := Player.GetFortCharacter[]):
             
             # 1. LÉPÉS: Határértékek kiszámítása a GDD alapján (v41.00)

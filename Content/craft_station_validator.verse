@@ -1,15 +1,18 @@
 using { /Fortnite.com/Devices }
 using { /Verse.org/Simulation }
 
+# Elérhetővé tesszük a saját projekt névterünket, hogy a fordító lássa a loot_definition-t
+using { /localhost/Pawn_Cave_Tycoon } 
+
 # Egyedi azonosító a nyersanyagok típusainak elkülönítésére
 raw_material_type := enum{ IronOre, CopperOre, GoldOre, RefinedMetal }
 
-# Egyetlen hozzávaló leírása - ALAPÉRTELMEZETT ÉRTÉKEKKEL JAVÍTVA
+# Egyetlen hozzávaló leírása
 recipe_ingredient := struct<concrete>:
     MaterialType : raw_material_type = raw_material_type.IronOre
     Amount : int = 1
 
-# A teljes recept struktúrája - ALAPÉRTELMEZETT ÉRTÉKEKKEL JAVÍTVA
+# A teljes recept struktúrája
 crafting_recipe := struct<concrete>:
     Ingredients : []recipe_ingredient = array{}
     ResultType : raw_material_type = raw_material_type.RefinedMetal
@@ -18,11 +21,8 @@ crafting_recipe := struct<concrete>:
 
 craft_station_validator := class(creative_device):
 
-    # Mivel a loot_definition a pawn_shop_manager_device-ben van, itt egy lokális
-    # árnyék-struktúrát használunk, vagy a menedzserből hivatkozunk rá.
-    # Hogy ne legyen típus-konfliktusod, a pawn_shop_manager-ben használt sémát követjük:
-    
-    ValidateAndCraft(CurrentInventory: []loot_definition, Recipe: crafting_recipe, CurrentWeightCapacity: float, CurrentBackpackWeight: float):?tuple([]loot_definition, loot_definition) =
+    # JAVÍTÁS: A 'tuple' kulcsszó törölve a visszatérési típusból, csak a zárójel () maradt!
+    ValidateAndCraft(CurrentInventory: []loot_definition, Recipe: crafting_recipe, CurrentWeightCapacity: float, CurrentBackpackWeight: float):?([]loot_definition, loot_definition) =
         
         # Ide gyűjtjük azokat az indexeket, amiket a sikeres crafting során ki kell hagyni a táskából
         var IndicesToRemove : []int = array{}
@@ -48,7 +48,7 @@ craft_station_validator := class(creative_device):
         if (MissingIngredients?):
             return false
 
-        # 2. LÉPÉS: Súlykontroll ellenőrzése
+        # Súlykontroll ellenőrzése
         var FlippedWeight : float = 0.0
         for (Idx : IndicesToRemove):
             if (Item := CurrentInventory[Idx]):
@@ -58,7 +58,7 @@ craft_station_validator := class(creative_device):
         if (FinalEstimatedWeight > CurrentWeightCapacity):
             return false
 
-        # 3. LÉPÉS: Új inventory összefésülése (Kísérleti .Contains HELYETT biztonságos ciklussal)
+        # Új inventory összefésülése biztonságos ciklussal
         var NewInventory : []loot_definition = array{}
         for (Index -> Item : CurrentInventory):
             var ShouldRemove : logic = false
@@ -69,17 +69,17 @@ craft_station_validator := class(creative_device):
             if (not ShouldRemove?):
                 set NewInventory = NewInventory + array{Item}
 
-        # 4. LÉPÉS: A jutalom legyártása
+        # A jutalom legyártása
         CraftedItem := loot_definition:
             ItemName := "Finomított Fém"
             Weight := Recipe.ResultWeight
             SellPrice := Recipe.ResultBasePrice
             ItemAsset := false
             ItemProp := false
-            PickupButton := button_device{}
+            PickupButton := button_device{}[cite: 1]
 
-        # Szigorú Verse tuple visszatérési szintaxis
-        return option{tuple{NewInventory + array{CraftedItem}, CraftedItem}}
+        # Szigorú Verse tuple visszatérési érték (kulcsszó nélkül)
+        return option{(NewInventory + array{CraftedItem}, CraftedItem)}
 
     # Segédfüggvény a tárgytípusok név alapján történő ellenőrzésére
     CheckItemType(Item: loot_definition, TargetType: raw_material_type):?logic =
