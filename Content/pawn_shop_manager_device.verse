@@ -13,7 +13,7 @@ log_pawn_shop := class(log_channel){}
 MakeMoneyText<localizes>(MoneyValue : int) : message = "PÉNZ: {MoneyValue} $"
 MakeWeightText<localizes>(WeightValue : float, MaxWeight : float) : message = "SÚLY: {WeightValue} / {MaxWeight} kg"
 MakeStashText<localizes>(StashValue : int, TickIncome : int) : message = "RAKTÁR: {StashValue} db | MÚZEUM: +{TickIncome} $/tick"
-
+MakeDropText<localizes>(Name: string, Weight: float) : message = "ELDOBÁS: {Name} ({Weight} kg)"
 MakeEmptyShelfText<localizes>() : message = "[ ÜRES POLC ]\nKattints a kipakoláshoz"
 MakeShopItemText<localizes>(Name: string, MinPrice: int, MaxPrice: int) : message = "{Name}\nBecsült érték:\n{MinPrice} $ - {MaxPrice} $\n(Vevőre vár)"
 MakeMuseumItemText<localizes>(Name: string, Income: int) : message = "MÚZEUM: {Name}\nKiállítva\nBevétel: +{Income} $/tick"
@@ -21,6 +21,13 @@ MakeMuseumItemText<localizes>(Name: string, Income: int) : message = "MÚZEUM: {
 MakeNPCGreetingText<localizes>() : message = "[ PULT ]\nKattints az alkudozás indításához."
 MakeNPCOfferText<localizes>(ItemName: string, Offer: int) : message = "NPC Vevő: Látom kint van a {ItemName}.\nAdok érte {Offer} $-t!\nMit lépsz?"
 MakeNPCNoItemsText<localizes>() : message = "NPC Vevő: Nincs semmi a bolti polcokon, ami érdekelne."
+
+drop_item_handler := class():
+    Manager : pawn_shop_manager_device
+    ItemIndex : int
+    
+    OnClick(Message : widget_message):void=
+        Manager.DropItemFromInventory(ItemIndex, Message.Player)
 
 loot_definition := class<concrete><public>:
     @editable ItemName : string = "Ismeretlen Tárgy"
@@ -45,6 +52,7 @@ shelf_slot := class:
     var IsEmpty : logic = true
     var PlacedLoot : ?loot_definition = false
     var PlacedProp : ?creative_prop = false
+    var InventoryUIBox : stack_box = stack_box{Orientation := orientation.Vertical}
 
     Init():void=
         ShelfMarker.Hide()
@@ -358,6 +366,18 @@ pawn_shop_manager_device := class(creative_device):
         WeightUI.SetText(MakeWeightText(CurrentBackpackWeight, MaxWeightCapacity))
         StashUI.SetText(MakeStashText(StashInventory.Length, CurrentTickIncome))
 
+        # ÚJ: Dinamikus gombok generálása a hátizsák tartalmából
+        var UIWidgets : []stack_box_slot = array{}
+        for (Index -> Item : BackpackInventory):
+            DropButton := button_loud{DefaultText := MakeDropText(Item.ItemName, Item.Weight)}
+            Handler := drop_item_handler{Manager := Self, ItemIndex := Index}
+            DropButton.OnClick().Subscribe(Handler.OnClick)
+            
+            set UIWidgets = UIWidgets + array:
+                stack_box_slot{Widget := DropButton, Padding := margin{Top := 5.0, Bottom := 5.0}}
+                
+        InventoryUIBox.SetSlots(UIWidgets)
+
     CreatePlayerUI(Player : player): void=
         if (PlayerUI := GetPlayerUI[Player]):
             UpdateUI()
@@ -372,6 +392,11 @@ pawn_shop_manager_device := class(creative_device):
                     canvas_slot:
                         Anchors := anchors{Minimum := vector2{X := 0.05, Y := 0.30}, Maximum := vector2{X := 0.05, Y := 0.30}}
                         Widget := StashUI
+                    # ÚJ: Itt adjuk hozzá a képernyőhöz az eldobható tárgyak listáját (Középtájt, jobb oldalon)
+                    canvas_slot:
+                        Anchors := anchors{Minimum := vector2{X := 0.80, Y := 0.30}, Maximum := vector2{X := 0.80, Y := 0.30}}
+                        Alignment := vector2{X := 0.0, Y := 0.0}
+                        Widget := InventoryUIBox
             PlayerUI.AddWidget(MyCanvas)
 
     # --- SÚLYBÜNTETÉS MECHANIKA (v41.00) ---
@@ -417,6 +442,26 @@ pawn_shop_manager_device := class(creative_device):
         
         var FinalOffer : int = Floor[FinalOfferFloat] or BasePrice
         return FinalOffer
+        DropItemFromInventory(IndexToRemove : int, Player : player) : void=
+        var NewInventory : []loot_definition = array{}
+        var DroppedWeight : float = 0.0
+
+        for (Index -> Item : BackpackInventory):
+            if (Index = IndexToRemove):
+                set DroppedWeight = Item.Weight
+                Logger.Print("Tárgy eldobva: {Item.ItemName}")
+            else:
+                set NewInventory = NewInventory + array{Item}
+
+        set BackpackInventory = NewInventory
+        set CurrentBackpackWeight = CurrentBackpackWeight - DroppedWeight
+        
+        # Biztonsági nullázás a lebegőpontos matek hibái ellen
+        if (CurrentBackpackWeight < 0.1):
+            set CurrentBackpackWeight = 0.0
+            
+        UpdateUI()
+        ApplyWeightPenalty(Player, CurrentBackpackWeight)
 
     # Meghatározza a vizuális reakciót az arányszám alapján
     PlayNPCDecisionAnimation(BasePrice: int, FinalOffer: int): void =
