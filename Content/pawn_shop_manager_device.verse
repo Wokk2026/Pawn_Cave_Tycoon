@@ -104,7 +104,9 @@ pawn_shop_manager_device := class(creative_device):
 
     @editable ExtractionZone : mutator_zone_device = mutator_zone_device{}
     @editable ShopTeleporter : teleporter_device = teleporter_device{}
-    
+    # --- ÚJ: A pultnál álló NPC vizuális eszköze és a Rebirth szint ---
+    @editable ShopNPC : character_device = character_device{}
+    var CurrentRebirthLevel : int = 0
     var UsedLootDefinitions : []loot_definition = array{}
     var ShopShelves : []shelf_slot = array{}
     var MuseumShelves : []shelf_slot = array{}
@@ -175,6 +177,29 @@ pawn_shop_manager_device := class(creative_device):
         for (Slot : ShopShelves):
             if (not Slot.IsEmpty?):
                 set FullShelves = FullShelves + array{Slot}
+
+        if (FullShelves.Length > 0):
+            # Kiválasztunk egy véletlenszerű tárgyat a polcokról
+            RandomShelfIndex := GetRandomInt(0, FullShelves.Length - 1)
+            
+            if (TargetShelf := FullShelves[RandomShelfIndex], Loot := TargetShelf.PlacedLoot?):
+                
+                # 1. Kiszámoljuk az okos ajánlatot a Rebirth szintünkkel
+                FinalOffer := CalculateNPCOffer(Loot.SellPrice, CurrentRebirthLevel)
+                
+                # 2. Lejátsszuk a vizuális animációt a pultnál lévő NPC-n
+                PlayNPCDecisionAnimation(Loot.SellPrice, FinalOffer)
+                
+                # 3. Frissítjük a UI-t és a belső változókat
+                set ActiveNegotiationShelf = option{TargetShelf}
+                set ActiveNPCOffer = FinalOffer
+                
+                NPCBillboard.SetText(MakeNPCOfferText(Loot.ItemName, FinalOffer))
+                NPCNextCustomerButton.Disable()
+                NPCAcceptButton.Enable()
+                NPCRejectButton.Enable()
+        else:
+            NPCBillboard.SetText(MakeNPCNoItemsText())
 
         if (FullShelves.Length > 0):
             RandomShelfIndex := GetRandomInt(0, FullShelves.Length - 1)
@@ -381,3 +406,28 @@ pawn_shop_manager_device := class(creative_device):
         if (TierIndex >= 0 and TierIndex < ClassSelectors.Length):
             if (TargetSelector := ClassSelectors[TierIndex]):
                 TargetSelector.ChangeClass(Player)
+                # Kiszámolja a végleges ajánlatot a Rebirth szint alapján
+
+    CalculateNPCOffer(BasePrice: int, RebirthLevel: int): int =
+        var MinMultiplier : float = 0.8
+        var MaxMultiplier : float = 1.5 + (RebirthLevel * 0.5)
+        
+        var RandomFactor : float = GetRandomFloat(MinMultiplier, MaxMultiplier)
+        var FinalOfferFloat : float = (BasePrice * 1.0) * RandomFactor
+        
+        var FinalOffer : int = Floor[FinalOfferFloat] or BasePrice
+        return FinalOffer
+
+    # Meghatározza a vizuális reakciót az arányszám alapján
+    PlayNPCDecisionAnimation(BasePrice: int, FinalOffer: int): void =
+        var OfferRatio: float = (FinalOffer * 1.0) / (BasePrice * 1.0)
+        
+        if (OfferRatio < 0.9):
+            Logger.Print("NPC Vizuális Reakció: Flegma legyintés. Pocsék ajánlat.")
+            # Később ide kötjük be a Scene Graph / Cinematic hívást a flegma animációhoz
+        else if (OfferRatio >= 0.9 and OfferRatio <= 1.5):
+            Logger.Print("NPC Vizuális Reakció: Gondolkodó bólogatás. Megfontolt ajánlat.")
+            # Később ide kötjük be a normál animációt
+        else:
+            Logger.Print("NPC Vizuális Reakció: Izgatott gesztikuláció. Jackpot ajánlat!")
+            # Később ide kötjük be az izgatott animációt
