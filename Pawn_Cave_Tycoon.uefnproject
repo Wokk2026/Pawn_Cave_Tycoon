@@ -5,7 +5,7 @@
 	"keyArt": "",
 	"docsUrl": "",
 	"apiAccess": "Private",
-	"compatibilityVersion": "40.41",
+	"compatibilityVersion": "41.00",
 	"requiredRedirectorStartingVersion": "40.41.54326946",
 	"editorPermissions": [],
 	"epicApp": "",
@@ -49,7 +49,11 @@
 			{
 				"bEnablePersonaDevice": false
 			},
-			"version": 1
+			"version": 1,
+			"sceneGraphAnimation":
+			{
+				"bIsSceneGraphAnimationAllowed": true
+			}
 		}
 	},
 	"bindings":

@@ -98,10 +98,10 @@ pawn_shop_manager_device := class(creative_device):
     @editable NPCRejectButton : button_device = button_device{}
     @editable NPCBillboard : billboard_device = billboard_device{}
 
-    @editable Tier1_Normal : movement_modulator_device = movement_modulator_device{}
-    @editable Tier2_LightPenalty : movement_modulator_device = movement_modulator_device{}
-    @editable Tier3_HeavyPenalty : movement_modulator_device = movement_modulator_device{}
-    @editable Tier4_OverloadPenalty : movement_modulator_device = movement_modulator_device{}
+    # --- ÚJ: Class Selectorok és Multiplayertűrő Map a súlyrendszerhez ---
+    @editable ClassSelectors : []class_selector_device = array{}
+    var PlayerWeightTiers : [player]int = map{}
+
     @editable ExtractionZone : mutator_zone_device = mutator_zone_device{}
     @editable ShopTeleporter : teleporter_device = teleporter_device{}
     
@@ -323,19 +323,10 @@ pawn_shop_manager_device := class(creative_device):
         else:
             Logger.Print("Nincs eleg penzed az ajto kinyitasara!")
 
+    # --- A RÉGI FÜGGVÉNY BEKÖTÉSE AZ ÚJ RENDSZERBE ---
     CheckWeightPenalty(Agent : agent): void=
-        var WeightRatio : float = 0.0
-        if (MaxWeightCapacity > 0.0):
-            set WeightRatio = CurrentBackpackWeight / MaxWeightCapacity
-
-        if (WeightRatio < 0.25):
-            Tier1_Normal.Activate(Agent)
-        else if (WeightRatio < 0.50):
-            Tier2_LightPenalty.Activate(Agent)
-        else if (WeightRatio < 0.75):
-            Tier3_HeavyPenalty.Activate(Agent)
-        else:
-            Tier4_OverloadPenalty.Activate(Agent)
+        if (Player := player[Agent]):
+            ApplyWeightPenalty(Player, CurrentBackpackWeight)
 
     UpdateUI(): void=
         MoneyUI.SetText(MakeMoneyText(CurrentPlayerMoney))
@@ -357,3 +348,36 @@ pawn_shop_manager_device := class(creative_device):
                         Anchors := anchors{Minimum := vector2{X := 0.05, Y := 0.30}, Maximum := vector2{X := 0.05, Y := 0.30}}
                         Widget := StashUI
             PlayerUI.AddWidget(MyCanvas)
+
+    # --- SÚLYBÜNTETÉS MECHANIKA (v41.00) ---
+    public ApplyWeightPenalty(Player : player, TotalWeight : float) : void =
+        if (FortChar := Player.GetFortCharacter[]):
+            
+            # 1. LÉPÉS: Proporcionális (százalékos) szintkalkuláció a MaxWeightCapacity alapján!
+            var WeightRatio : float = TotalWeight / MaxWeightCapacity
+            var TargetTier : int = 0
+            
+            if (WeightRatio >= 0.25 and WeightRatio < 0.50):
+                set TargetTier = 1 # 25-50% telítettség
+            else if (WeightRatio >= 0.50 and WeightRatio < 0.75):
+                set TargetTier = 2 # 50-75% telítettség
+            else if (WeightRatio >= 0.75):
+                set TargetTier = 3 # 75% felett
+            else:
+                set TargetTier = 0 # 25% alatt, Könnyű
+
+            # 2. LÉPÉS: Lekérdezzük a játékos JELENLEGI szintjét a Map-ből
+            var CurrentTier : int = 0
+            if (SavedTier := PlayerWeightTiers[Player]):
+                set CurrentTier = SavedTier
+
+            # 3. LÉPÉS: Osztályváltás kikényszerítése, ha szintet lépett
+            if (TargetTier /= CurrentTier):
+                if (set PlayerWeightTiers[Player] = TargetTier):
+                    ExecuteClassChange(Player, TargetTier)
+                    Logger.Print("Súlybüntetés frissítve. Játékos új szintje: {TargetTier}")
+
+    ExecuteClassChange(Player : player, TierIndex : int) : void =
+        if (TierIndex >= 0 and TierIndex < ClassSelectors.Length):
+            if (TargetSelector := ClassSelectors[TierIndex]):
+                TargetSelector.ChangeClass(Player)

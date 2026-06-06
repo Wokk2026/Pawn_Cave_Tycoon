@@ -27,5 +27,6 @@
 		"libraryCustomPath": ""
 	},
 	"builtInAutoActivate": false,
-	"EnableSceneGraph": true
+	"EnableSceneGraph": true,
+	"EnableSceneGraphAnimation": true
 }
