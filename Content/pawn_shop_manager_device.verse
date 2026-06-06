@@ -350,7 +350,7 @@ pawn_shop_manager_device := class(creative_device):
             PlayerUI.AddWidget(MyCanvas)
 
     # --- SÚLYBÜNTETÉS MECHANIKA (v41.00) ---
-    public ApplyWeightPenalty(Player : player, TotalWeight : float) : void =
+    ApplyWeightPenalty(Player : player, TotalWeight : float) : void =
         if (FortChar := Player.GetFortCharacter[]):
             
             # 1. LÉPÉS: Proporcionális (százalékos) szintkalkuláció a MaxWeightCapacity alapján!
@@ -372,7 +372,7 @@ pawn_shop_manager_device := class(creative_device):
                 set CurrentTier = SavedTier
 
             # 3. LÉPÉS: Osztályváltás kikényszerítése, ha szintet lépett
-            if (TargetTier /= CurrentTier):
+            if (TargetTier /=  CurrentTier):
                 if (set PlayerWeightTiers[Player] = TargetTier):
                     ExecuteClassChange(Player, TargetTier)
                     Logger.Print("Súlybüntetés frissítve. Játékos új szintje: {TargetTier}")
