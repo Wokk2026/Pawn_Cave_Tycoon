@@ -386,98 +386,99 @@ pawn_shop_manager_device := class(creative_device):
         ApplyWeightPenalty(Player, CurrentBackpackWeight)
 
     UpdateUI(): void=
-        for (Player : GetPlayspace().GetPlayers(), PlayerUI := GetPlayerUI[Player]):
-            if (OldCanvas := CurrentCanvas?):
-                PlayerUI.RemoveWidget(OldCanvas)
-            
-            MoneyUI.SetText(MakeMoneyText(CurrentPlayerMoney))
-            WeightUI.SetText(MakeWeightText(CurrentBackpackWeight, MaxWeightCapacity))
-            
-            var ModeStr : string = "x1"
-            if (CurrentSellMode = sell_amount_mode.x10):
-                set ModeStr = "x10"
-            else if (CurrentSellMode = sell_amount_mode.All):
-                set ModeStr = "MAX"
+        # 1. Biztonságos, nem megbukható ciklus
+        for (Player : GetPlayspace().GetPlayers()) do:
+            # 2. Az UI lekérdezés leválasztása egy if-be. Ennek a teste már 100% no_rollback mentes zóna!
+            if (PlayerUI := GetPlayerUI[Player]):
+                if (OldCanvas := CurrentCanvas?):
+                    PlayerUI.RemoveWidget(OldCanvas)
+                
+                MoneyUI.SetText(MakeMoneyText(CurrentPlayerMoney))
+                WeightUI.SetText(MakeWeightText(CurrentBackpackWeight, MaxWeightCapacity))
+                
+                var ModeStr : string = "x1"
+                if (CurrentSellMode = sell_amount_mode.x10):
+                    set ModeStr = "x10"
+                else if (CurrentSellMode = sell_amount_mode.All):
+                    set ModeStr = "MAX"
 
-            ToggleBtn := button_quiet{DefaultText := MakeToggleModeText(ModeStr)}
-            ToggleHandler := toggle_sell_mode_handler{Manager := Self}
-            ToggleBtn.OnClick().Subscribe(ToggleHandler.OnClick)
+                ToggleBtn := button_quiet{DefaultText := MakeToggleModeText(ModeStr)}
+                ToggleHandler := toggle_sell_mode_handler{Manager := Self}
+                ToggleBtn.OnClick().Subscribe(ToggleHandler.OnClick)
 
-            TotalStashValue := CalculateTotalStashValue()
-            SellAllBtn := button_loud{DefaultText := MakeSellAllText(TotalStashValue)}
-            SellAllHndl := sell_all_handler{Manager := Self}
-            SellAllBtn.OnClick().Subscribe(SellAllHndl.OnClick)
+                TotalStashValue := CalculateTotalStashValue()
+                SellAllBtn := button_loud{DefaultText := MakeSellAllText(TotalStashValue)}
+                SellAllHndl := sell_all_handler{Manager := Self}
+                SellAllBtn.OnClick().Subscribe(SellAllHndl.OnClick)
 
-            var HeaderWidgets : []stack_box_slot = array{
-                stack_box_slot{Widget := ToggleBtn, Padding := margin{Bottom := 5.0}},
-                stack_box_slot{Widget := SellAllBtn, Padding := margin{Bottom := 15.0}}
-            }
-
-            var BagGrouped : [string]int = map{}
-            for (Item : BackpackInventory):
-                if (Val := BagGrouped[Item.ItemName], set BagGrouped[Item.ItemName] = Val + 1){}
-                else if (set BagGrouped[Item.ItemName] = 1){}
-
-            var BagWidgets : []stack_box_slot = array{
-                stack_box_slot{Widget := text_block{DefaultText := MakeCategoryText("NYERS (ELDHATORATLAN)"), DefaultTextColor := NamedColors.Red}, Padding := margin{Bottom := 5.0}}
-            }
-            
-            # A Verse-natív tömbgenerálás (nincs no_rollback hiba)
-            BagLoopWidgets := for (Name -> Count : BagGrouped):
-                BagLine := button_quiet{DefaultText := MakeGroupedItemText("{Name} *", Count, 0)}
-                stack_box_slot{Widget := BagLine, Padding := margin{Bottom := 2.0}}
-            
-            set BagWidgets = BagWidgets + BagLoopWidgets
-
-            var StashGrouped : [string]int = map{}
-            for (Item : StashInventory):
-                if (Val := StashGrouped[Item.ItemName], set StashGrouped[Item.ItemName] = Val + 1){}
-                else if (set StashGrouped[Item.ItemName] = 1){}
-
-            var StashWidgets : []stack_box_slot = array{
-                stack_box_slot{Widget := text_block{DefaultText := MakeCategoryText("RAKTÁR (KÉSZLET)"), DefaultTextColor := NamedColors.Green}, Padding := margin{Top := 15.0, Bottom := 5.0}}
-            }
-
-            var StashLoopWidgets : []stack_box_slot = array{}
-            for:
-                Name -> Count : StashGrouped
-                Def := GetLootDefByName(Name)?
-            do:
-                TotalItemVal := Count * Def.SellPrice
-                ItemTextWidget := text_block{DefaultText := MakeGroupedItemText(Name, Count, TotalItemVal), DefaultTextColor := NamedColors.White}
-                SellBtn := button_regular{DefaultText := MakeSellBtnText(ModeStr)}
-                SellHndl := sell_item_handler{Manager := Self, ItemName := Name}
-                SellBtn.OnClick().Subscribe(SellHndl.OnClick)
-
-                RowBox := stack_box{
-                    Orientation := orientation.Horizontal
-                    Slots := array{
-                        stack_box_slot{Widget := ItemTextWidget, Padding := margin{Right := 10.0}, VerticalAlignment := vertical_alignment.Center},
-                        stack_box_slot{Widget := SellBtn}
-                    }
+                var HeaderWidgets : []stack_box_slot = array{
+                    stack_box_slot{Widget := ToggleBtn, Padding := margin{Bottom := 5.0}},
+                    stack_box_slot{Widget := SellAllBtn, Padding := margin{Bottom := 15.0}}
                 }
-                set StashLoopWidgets = StashLoopWidgets + array{stack_box_slot{Widget := RowBox, Padding := margin{Bottom := 5.0}}}
 
-            set StashWidgets = StashWidgets + StashLoopWidgets
+                # Biztonságosan szigetelt szótár módosítások
+                var BagGrouped : [string]int = map{}
+                for (Item : BackpackInventory) do:
+                    if (Val := BagGrouped[Item.ItemName]):
+                        if (set BagGrouped[Item.ItemName] = Val + 1) {}
+                    else:
+                        if (set BagGrouped[Item.ItemName] = 1) {}
 
-            AllSlots := HeaderWidgets + BagWidgets + StashWidgets
-            MainUIBox := stack_box{Orientation := orientation.Vertical, Slots := AllSlots}
+                var BagWidgets : []stack_box_slot = array{
+                    stack_box_slot{Widget := text_block{DefaultText := MakeCategoryText("NYERS (ELDHATORATLAN)"), DefaultTextColor := NamedColors.Red}, Padding := margin{Bottom := 5.0}}
+                }
+                
+                for (Name -> Count : BagGrouped) do:
+                    BagLine := button_quiet{DefaultText := MakeGroupedItemText("{Name} *", Count, 0)}
+                    set BagWidgets = BagWidgets + array{stack_box_slot{Widget := BagLine, Padding := margin{Bottom := 2.0}}}
 
-            NewCanvas := canvas:
-                Slots := array:
-                    canvas_slot:
-                        Anchors := anchors{Minimum := vector2{X := 0.05, Y := 0.20}, Maximum := vector2{X := 0.05, Y := 0.20}}
-                        Widget := MoneyUI
-                    canvas_slot:
-                        Anchors := anchors{Minimum := vector2{X := 0.05, Y := 0.25}, Maximum := vector2{X := 0.05, Y := 0.25}}
-                        Widget := WeightUI
-                    canvas_slot:
-                        Anchors := anchors{Minimum := vector2{X := 0.75, Y := 0.15}, Maximum := vector2{X := 0.75, Y := 0.15}}
-                        Alignment := vector2{X := 0.0, Y := 0.0}
-                        Widget := MainUIBox
-            
-            set CurrentCanvas = option{NewCanvas}
-            PlayerUI.AddWidget(NewCanvas)
+                var StashGrouped : [string]int = map{}
+                for (Item : StashInventory) do:
+                    if (Val := StashGrouped[Item.ItemName]):
+                        if (set StashGrouped[Item.ItemName] = Val + 1) {}
+                    else:
+                        if (set StashGrouped[Item.ItemName] = 1) {}
+
+                var StashWidgets : []stack_box_slot = array{
+                    stack_box_slot{Widget := text_block{DefaultText := MakeCategoryText("RAKTÁR (KÉSZLET)"), DefaultTextColor := NamedColors.Green}, Padding := margin{Top := 15.0, Bottom := 5.0}}
+                }
+
+                for (Name -> Count : StashGrouped) do:
+                    # 3. Még egy szigetelt if blokk a failable lekérdezéshez. Ami ezen belül van, az szent.
+                    if (Def := GetLootDefByName(Name)?):
+                        TotalItemVal := Count * Def.SellPrice
+                        ItemTextWidget := text_block{DefaultText := MakeGroupedItemText(Name, Count, TotalItemVal), DefaultTextColor := NamedColors.White}
+                        SellBtn := button_regular{DefaultText := MakeSellBtnText(ModeStr)}
+                        SellHndl := sell_item_handler{Manager := Self, ItemName := Name}
+                        SellBtn.OnClick().Subscribe(SellHndl.OnClick)
+
+                        RowBox := stack_box{
+                            Orientation := orientation.Horizontal
+                            Slots := array{
+                                stack_box_slot{Widget := ItemTextWidget, Padding := margin{Right := 10.0}, VerticalAlignment := vertical_alignment.Center},
+                                stack_box_slot{Widget := SellBtn}
+                            }
+                        }
+                        set StashWidgets = StashWidgets + array{stack_box_slot{Widget := RowBox, Padding := margin{Bottom := 5.0}}}
+
+                AllSlots := HeaderWidgets + BagWidgets + StashWidgets
+                MainUIBox := stack_box{Orientation := orientation.Vertical, Slots := AllSlots}
+
+                NewCanvas := canvas:
+                    Slots := array:
+                        canvas_slot:
+                            Anchors := anchors{Minimum := vector2{X := 0.05, Y := 0.20}, Maximum := vector2{X := 0.05, Y := 0.20}}
+                            Widget := MoneyUI
+                        canvas_slot:
+                            Anchors := anchors{Minimum := vector2{X := 0.05, Y := 0.25}, Maximum := vector2{X := 0.05, Y := 0.25}}
+                            Widget := WeightUI
+                        canvas_slot:
+                            Anchors := anchors{Minimum := vector2{X := 0.75, Y := 0.15}, Maximum := vector2{X := 0.75, Y := 0.15}}
+                            Alignment := vector2{X := 0.0, Y := 0.0}
+                            Widget := MainUIBox
+                
+                set CurrentCanvas = option{NewCanvas}
+                PlayerUI.AddWidget(NewCanvas)
 
     CreatePlayerUI(Player : player): void=
         UpdateUI()
