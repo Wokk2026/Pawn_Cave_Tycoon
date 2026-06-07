@@ -1,7 +1,6 @@
 using { /Fortnite.com/Devices }
 using { /Verse.org/Simulation }
 
-# Adatstruktúrák
 loot_definition := class<concrete><public>:
     @editable ItemName : string = "Ismeretlen Tárgy"
     @editable ItemAsset : ?creative_prop_asset = false
@@ -13,7 +12,6 @@ loot_definition := class<concrete><public>:
 
 shelf_type := enum<public>{ Shop, Museum }
 
-# Globális szövegformázók (A <public> tag miatt látja majd a másik fájl)
 MakeMoneyText<localizes><public>(MoneyValue : int) : message = "PÉNZ: {MoneyValue} $"
 MakeWeightText<localizes><public>(WeightValue : float, MaxWeight : float) : message = "SÚLY: {WeightValue} / {MaxWeight} kg"
 MakeStashText<localizes><public>(StashValue : int, TickIncome : int) : message = "RAKTÁR: {StashValue} db | MÚZEUM: +{TickIncome} $/tick"
@@ -26,3 +24,10 @@ MakeNPCOfferText<localizes><public>(ItemName: string, Offer: int) : message = "N
 MakeNPCNoItemsText<localizes><public>() : message = "NPC Vevő: Nincs semmi a bolti polcokon, ami érdekelne."
 MakeDiscoveryTitleText<localizes><public>() : message = "ÚJ FELFEDEZÉS!"
 MakeDiscoveryItemText<localizes><public>(ItemName : string) : message = "{ItemName}"
+
+# --- ÚJ: Batch Sell Szövegek ---
+MakeCategoryText<localizes><public>(Title : string) : message = "=== {Title} ==="
+MakeGroupedItemText<localizes><public>(Name: string, Count: int, TotalValue: int) : message = "{Name} | {Count} db | Érték: {TotalValue} $"
+MakeSellBtnText<localizes><public>(AmountStr: string) : message = "ELAD ({AmountStr})"
+MakeToggleModeText<localizes><public>(CurrentMode: string) : message = "Eladási Mód: [ {CurrentMode} ]"
+MakeSellAllText<localizes><public>(TotalValue: int) : message = "MINDENT ELAD (+{TotalValue} $)"

@@ -3,12 +3,31 @@ using { /Fortnite.com/Characters }
 using { /Fortnite.com/UI }
 using { /Verse.org/Simulation }
 using { /Verse.org/Colors }
-using { /Verse.org/Random } # <--- EZT AZ EGY SORT ADD HOZZÁ!
+using { /Verse.org/Random }
 using { /UnrealEngine.com/Temporary/Diagnostics }
 using { /UnrealEngine.com/Temporary/UI }
 using { /UnrealEngine.com/Temporary/SpatialMath }
 
 log_pawn_shop := class(log_channel){}
+
+# JAVÍTVA: Max helyett All, hogy ne ütközzön a matek függvénnyel
+sell_amount_mode := enum{ x1, x10, All }
+
+toggle_sell_mode_handler := class():
+    Manager : pawn_shop_manager_device
+    OnClick(Message : widget_message):void=
+        Manager.ToggleSellMode()
+
+sell_item_handler := class():
+    Manager : pawn_shop_manager_device
+    ItemName : string
+    OnClick(Message : widget_message):void=
+        Manager.SellGroupedItem(ItemName)
+
+sell_all_handler := class():
+    Manager : pawn_shop_manager_device
+    OnClick(Message : widget_message):void=
+        Manager.SellAllStash()
 
 drop_item_handler := class():
     Manager : pawn_shop_manager_device
@@ -52,7 +71,6 @@ fixed_loot_source := class:
 pawn_shop_manager_device := class(creative_device):
     Logger : log = log{Channel := log_pawn_shop}
 
-    # Bekötjük az NPC Agyat a másik fájlból
     var NPCBrain : pawn_npc_brain = pawn_npc_brain{}
 
     @editable StartingMoney : int = 0
@@ -80,16 +98,20 @@ pawn_shop_manager_device := class(creative_device):
     @editable ExtractionZone : mutator_zone_device = mutator_zone_device{}
     @editable ShopTeleporter : teleporter_device = teleporter_device{}
     @editable ShopNPC : character_device = character_device{}
-  
+
     var CurrentRebirthLevel : int = 0
     var UsedLootDefinitions : []loot_definition = array{}
     var ShopShelves : []shelf_slot = array{}
     var MuseumShelves : []shelf_slot = array{}
 
     var CurrentPlayerMoney : int = 0
+    var CurrentEXP : int = 0
     var CurrentBackpackWeight : float = 0.0
     var CurrentUpgradeCost : int = 0
     var CurrentTickIncome : int = 0
+    var IsPopupActive : logic = false
+    
+    var CurrentSellMode : sell_amount_mode = sell_amount_mode.x1
 
     var ActiveNegotiationShelf : ?shelf_slot = false
     var ActiveNPCOffer : int = 0
@@ -97,14 +119,12 @@ pawn_shop_manager_device := class(creative_device):
     var BackpackInventory : []loot_definition = array{}
     var StashInventory : []loot_definition = array{}
     
-    # A Felfedezések memóriája
     var DiscoveredItems : [string]logic = map{}
     var PlayerWeightTiers : [player]int = map{}
     
     var CurrentCanvas : ?canvas = false
     var MoneyUI : text_block = text_block{DefaultTextColor := NamedColors.White}
     var WeightUI : text_block = text_block{DefaultTextColor := NamedColors.White}
-    var StashUI : text_block = text_block{DefaultTextColor := NamedColors.Yellow}
 
     OnBegin<override>()<suspends>: void=
         set CurrentPlayerMoney = StartingMoney
@@ -149,6 +169,57 @@ pawn_shop_manager_device := class(creative_device):
                 set CurrentPlayerMoney = CurrentPlayerMoney + CurrentTickIncome
                 UpdateUI()
 
+    ToggleSellMode():void=
+        if (CurrentSellMode = sell_amount_mode.x1):
+            set CurrentSellMode = sell_amount_mode.x10
+        else if (CurrentSellMode = sell_amount_mode.x10):
+            set CurrentSellMode = sell_amount_mode.All
+        else:
+            set CurrentSellMode = sell_amount_mode.x1
+        UpdateUI()
+
+    CalculateTotalStashValue() : int =
+        var Total : int = 0
+        for (Item : StashInventory):
+            set Total = Total + Item.SellPrice
+        return Total
+
+    GetLootDefByName(Name: string) : ?loot_definition =
+        for (Def : LootDatabase, Def.ItemName = Name):
+            return option{Def}
+        return false
+
+    SellGroupedItem(ItemName : string):void=
+        var AmountToSell : int = 1
+        if (CurrentSellMode = sell_amount_mode.x10):
+            set AmountToSell = 10
+        else if (CurrentSellMode = sell_amount_mode.All):
+            set AmountToSell = 9999
+
+        var NewStash : []loot_definition = array{}
+        var SoldCount : int = 0
+        var MoneyGained : int = 0
+
+        for (Item : StashInventory):
+            if (Item.ItemName = ItemName and SoldCount < AmountToSell):
+                set SoldCount = SoldCount + 1
+                set MoneyGained = MoneyGained + Item.SellPrice
+            else:
+                set NewStash = NewStash + array{Item}
+
+        set StashInventory = NewStash
+        set CurrentPlayerMoney = CurrentPlayerMoney + MoneyGained
+        Logger.Print("{SoldCount} db {ItemName} eladva {MoneyGained} $-ért.")
+        UpdateUI()
+
+    SellAllStash():void=
+        TotalValue := CalculateTotalStashValue()
+        if (TotalValue > 0):
+            set CurrentPlayerMoney = CurrentPlayerMoney + TotalValue
+            set StashInventory = array{}
+            Logger.Print("Teljes Stash eladva {TotalValue} $-ért.")
+            UpdateUI()
+
     OnNPCNextCustomerPressed(Agent : agent): void=
         var FullShelves : []shelf_slot = array{}
         for (Slot : ShopShelves, not Slot.IsEmpty?):
@@ -157,8 +228,6 @@ pawn_shop_manager_device := class(creative_device):
         if (FullShelves.Length > 0):
             RandomShelfIndex := GetRandomInt(0, FullShelves.Length - 1)
             if (TargetShelf := FullShelves[RandomShelfIndex], Loot := TargetShelf.PlacedLoot?):
-                
-                # Itt hívjuk a külső NPC agyat!
                 FinalOffer := NPCBrain.CalculateNPCOffer(Loot.SellPrice, CurrentRebirthLevel)
                 NPCBrain.PlayNPCDecisionAnimation(Loot.SellPrice, FinalOffer)
                 
@@ -242,7 +311,6 @@ pawn_shop_manager_device := class(creative_device):
     OnFixedLootPickedUp(Agent : agent, Loot : loot_definition): void=
         if ((CurrentBackpackWeight + Loot.Weight) <= MaxWeightCapacity):
             
-            # --- FELFEDEZÉS MECHANIKA ---
             var IsFirstTime : logic = false
             if (not DiscoveredItems[Loot.ItemName]):
                 set IsFirstTime = true
@@ -250,13 +318,12 @@ pawn_shop_manager_device := class(creative_device):
             if (IsFirstTime?):
                 if (set DiscoveredItems[Loot.ItemName] = true):
                     Logger.Print("Új kincs a Múzeumnak: {Loot.ItemName}")
-                    set CurrentPlayerMoney = CurrentPlayerMoney + 1000
+                    set CurrentEXP = CurrentEXP + 500
                     set StashInventory = StashInventory + array{Loot}
                     if (Player := player[Agent]):
                         spawn{ShowDiscoveryPopup(Player, Loot.ItemName)}
             else:
                 set BackpackInventory = BackpackInventory + array{Loot}
-            # ---------------------------
 
             set CurrentBackpackWeight = CurrentBackpackWeight + Loot.Weight
             if (ActualProp := Loot.ItemProp?):
@@ -325,17 +392,76 @@ pawn_shop_manager_device := class(creative_device):
             
             MoneyUI.SetText(MakeMoneyText(CurrentPlayerMoney))
             WeightUI.SetText(MakeWeightText(CurrentBackpackWeight, MaxWeightCapacity))
-            StashUI.SetText(MakeStashText(StashInventory.Length, CurrentTickIncome))
-
-            var UIWidgets : []stack_box_slot = array{}
-            for (Index -> Item : BackpackInventory):
-                DropButton := button_loud{DefaultText := MakeDropText(Item.ItemName, Item.Weight)}
-                Handler := drop_item_handler{Manager := Self, ItemIndex := Index}
-                DropButton.OnClick().Subscribe(Handler.OnClick)
-                set UIWidgets = UIWidgets + array:
-                    stack_box_slot{Widget := DropButton, Padding := margin{Top := 5.0, Bottom := 5.0}}
             
-            NewInventoryUIBox := stack_box{Orientation := orientation.Vertical, Slots := UIWidgets}
+            var ModeStr : string = "x1"
+            if (CurrentSellMode = sell_amount_mode.x10):
+                set ModeStr = "x10"
+            else if (CurrentSellMode = sell_amount_mode.All):
+                set ModeStr = "MAX"
+
+            ToggleBtn := button_quiet{DefaultText := MakeToggleModeText(ModeStr)}
+            ToggleHandler := toggle_sell_mode_handler{Manager := Self}
+            ToggleBtn.OnClick().Subscribe(ToggleHandler.OnClick)
+
+            TotalStashValue := CalculateTotalStashValue()
+            SellAllBtn := button_loud{DefaultText := MakeSellAllText(TotalStashValue)}
+            SellAllHndl := sell_all_handler{Manager := Self}
+            SellAllBtn.OnClick().Subscribe(SellAllHndl.OnClick)
+
+            var HeaderWidgets : []stack_box_slot = array{
+                stack_box_slot{Widget := ToggleBtn, Padding := margin{Bottom := 5.0}},
+                stack_box_slot{Widget := SellAllBtn, Padding := margin{Bottom := 15.0}}
+            }
+
+            var BagGrouped : [string]int = map{}
+            for (Item : BackpackInventory):
+                if (Val := BagGrouped[Item.ItemName], set BagGrouped[Item.ItemName] = Val + 1){}
+                else if (set BagGrouped[Item.ItemName] = 1){}
+
+            var BagWidgets : []stack_box_slot = array{
+                stack_box_slot{Widget := text_block{DefaultText := MakeCategoryText("NYERS (ELDHATORATLAN)"), DefaultTextColor := NamedColors.Red}, Padding := margin{Bottom := 5.0}}
+            }
+            
+            # A Verse-natív tömbgenerálás (nincs no_rollback hiba)
+            BagLoopWidgets := for (Name -> Count : BagGrouped):
+                BagLine := button_quiet{DefaultText := MakeGroupedItemText("{Name} *", Count, 0)}
+                stack_box_slot{Widget := BagLine, Padding := margin{Bottom := 2.0}}
+            
+            set BagWidgets = BagWidgets + BagLoopWidgets
+
+            var StashGrouped : [string]int = map{}
+            for (Item : StashInventory):
+                if (Val := StashGrouped[Item.ItemName], set StashGrouped[Item.ItemName] = Val + 1){}
+                else if (set StashGrouped[Item.ItemName] = 1){}
+
+            var StashWidgets : []stack_box_slot = array{
+                stack_box_slot{Widget := text_block{DefaultText := MakeCategoryText("RAKTÁR (KÉSZLET)"), DefaultTextColor := NamedColors.Green}, Padding := margin{Top := 15.0, Bottom := 5.0}}
+            }
+
+            var StashLoopWidgets : []stack_box_slot = array{}
+            for:
+                Name -> Count : StashGrouped
+                Def := GetLootDefByName(Name)?
+            do:
+                TotalItemVal := Count * Def.SellPrice
+                ItemTextWidget := text_block{DefaultText := MakeGroupedItemText(Name, Count, TotalItemVal), DefaultTextColor := NamedColors.White}
+                SellBtn := button_regular{DefaultText := MakeSellBtnText(ModeStr)}
+                SellHndl := sell_item_handler{Manager := Self, ItemName := Name}
+                SellBtn.OnClick().Subscribe(SellHndl.OnClick)
+
+                RowBox := stack_box{
+                    Orientation := orientation.Horizontal
+                    Slots := array{
+                        stack_box_slot{Widget := ItemTextWidget, Padding := margin{Right := 10.0}, VerticalAlignment := vertical_alignment.Center},
+                        stack_box_slot{Widget := SellBtn}
+                    }
+                }
+                set StashLoopWidgets = StashLoopWidgets + array{stack_box_slot{Widget := RowBox, Padding := margin{Bottom := 5.0}}}
+
+            set StashWidgets = StashWidgets + StashLoopWidgets
+
+            AllSlots := HeaderWidgets + BagWidgets + StashWidgets
+            MainUIBox := stack_box{Orientation := orientation.Vertical, Slots := AllSlots}
 
             NewCanvas := canvas:
                 Slots := array:
@@ -346,12 +472,9 @@ pawn_shop_manager_device := class(creative_device):
                         Anchors := anchors{Minimum := vector2{X := 0.05, Y := 0.25}, Maximum := vector2{X := 0.05, Y := 0.25}}
                         Widget := WeightUI
                     canvas_slot:
-                        Anchors := anchors{Minimum := vector2{X := 0.05, Y := 0.30}, Maximum := vector2{X := 0.05, Y := 0.30}}
-                        Widget := StashUI
-                    canvas_slot:
-                        Anchors := anchors{Minimum := vector2{X := 0.80, Y := 0.30}, Maximum := vector2{X := 0.80, Y := 0.30}}
+                        Anchors := anchors{Minimum := vector2{X := 0.75, Y := 0.15}, Maximum := vector2{X := 0.75, Y := 0.15}}
                         Alignment := vector2{X := 0.0, Y := 0.0}
-                        Widget := NewInventoryUIBox
+                        Widget := MainUIBox
             
             set CurrentCanvas = option{NewCanvas}
             PlayerUI.AddWidget(NewCanvas)
@@ -382,10 +505,10 @@ pawn_shop_manager_device := class(creative_device):
                         TargetSelector.ChangeClass(Player)
                         Logger.Print("Súlybüntetés frissítve: {TargetTier}. szint")
 
-    # --- FILMES FELFEDEZÉS POPUP ANIMÁCIÓ ---
     ShowDiscoveryPopup(Player : player, ItemName : string)<suspends> : void=
-        if (PlayerUI := GetPlayerUI[Player]):
-            DarkBackground := color_block{DefaultColor := NamedColors.Black, DefaultOpacity := 0.8, DefaultDesiredSize := vector2{X := 3000.0, Y := 3000.0}}
+        if (PlayerUI := GetPlayerUI[Player], not IsPopupActive?):
+            set IsPopupActive = true
+            DarkBackground := color_block{DefaultColor := NamedColors.Black, DefaultOpacity := 0.4, DefaultDesiredSize := vector2{X := 3000.0, Y := 3000.0}}
             TitleText := text_block{DefaultText := MakeDiscoveryTitleText(), DefaultTextColor := NamedColors.Yellow}
             NameText := text_block{DefaultText := MakeDiscoveryItemText(ItemName), DefaultTextColor := NamedColors.White}
             
@@ -404,5 +527,6 @@ pawn_shop_manager_device := class(creative_device):
                         Alignment := vector2{X:=0.5, Y:=0.5}
 
             PlayerUI.AddWidget(PopupCanvas)
-            Sleep(4.0) 
+            Sleep(2.0) 
             PlayerUI.RemoveWidget(PopupCanvas)
+            set IsPopupActive = false
